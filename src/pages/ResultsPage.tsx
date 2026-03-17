@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { supabase } from "../supabase";
 import { useNavigate } from "react-router-dom";
 import { calculateResults, type TestResult } from "@/data/scl90";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +36,27 @@ const levelBadgeVariants: Record<string, string> = {
   severe: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
-const ResultsPage = () => {
+const ResultsPage = () => {// --- 开始复制 ---
+  const [remainingUses, setRemainingUses] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchRemaining = async () => {
+      const currentCode = localStorage.getItem('access_code');
+      if (currentCode) {
+        const { data } = await supabase
+          .from('access_codes')
+          .select('used_count, max_uses')
+          .eq('code', currentCode)
+          .single();
+
+        if (data) {
+          setRemainingUses(data.max_uses - data.used_count);
+        }
+      }
+    };
+    fetchRemaining();
+  }, []);
+  // --- 结束复制 ---
   const navigate = useNavigate();
   const [result, setResult] = useState<TestResult | null>(null);
 
@@ -215,7 +236,19 @@ const ResultsPage = () => {
           </Button>
         </div>
       </div>
-    </div>
+    {/* --- 开始复制 --- */}
+    {remainingUses !== null && (
+      <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center mx-4">
+        <p className="text-sm text-slate-500">
+          当前验证码剩余可用次数：
+          <span className={`font-bold ml-1 ${remainingUses <= 1 ? 'text-red-500' : 'text-cyan-600'}`}>
+            {remainingUses}
+          </span> 次
+        </p>
+        <p className="text-[10px] text-slate-400 mt-1">次数用完后将无法再次查看结果，建议截图保存</p>
+      </div>
+    )}
+    {/* --- 结束复制 --- */}</div>
   );
 };
 
