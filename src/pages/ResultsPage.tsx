@@ -13,54 +13,64 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { supabase } from "../supabase"; // 1. 导入数据库配置
+import { supabase } from "../supabase";
 
 const ResultsPage = () => {
   const navigate = useNavigate();
   const [remainingUses, setRemainingUses] = useState<number | null>(null);
+  const [results, setResults] = useState<TestResult[] | null>(null); // 存储测评结果
 
-  // 2. 获取剩余次数的逻辑
-  // 修改后的逻辑：先获取次数、再扣除次数、最后更新页面显示
   useEffect(() => {
-    const handleUsage = async () => {
+    const handleUsageAndData = async () => {
+      // 1. 获取本地存储的答案并计算结果
+      const savedAnswers = localStorage.getItem("test-answers");
+      if (savedAnswers) {
+        const answers = JSON.parse(savedAnswers);
+        const calculated = calculateResults(answers);
+        setResults(calculated);
+      }
+
+      // 2. 处理扣费逻辑
       const currentCode = localStorage.getItem('access_code');
       if (!currentCode) return;
 
-      // 1. 先从数据库查询当前的使用情况
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('access_codes')
         .select('used_count, max_uses')
         .eq('code', currentCode)
         .single();
 
-      if (data) {
-        // 2. 关键：把数据库里的使用次数 + 1
+      if (data && !error) {
         const newUsedCount = data.used_count + 1;
         
+        // 执行数据库更新
         await supabase
           .from('access_codes')
           .update({ used_count: newUsedCount })
           .eq('code', currentCode);
 
-        // 3. 更新页面上显示的剩余次数（即：最大次数 - 新的使用次数）
-        setRemainingUses(data.max_uses - newUsedCount);
+        // 计算并设置剩余次数
+        const left = data.max_uses - newUsedCount;
+        setRemainingUses(left < 0 ? 0 : left);
       }
     };
     
-    handleUsage();
-  }, []); // 这里的空数组确保只有在第一次进入结果页时才执行一次扣费
-
-  // 这里假设你原本有获取测试结果的逻辑...
-  // const answers = JSON.parse(localStorage.getItem("test-answers") || "{}");
-  // const results = calculateResults(answers);
+    handleUsageAndData();
+  }, []);
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* 这里是你原本的结果显示内容... */}
         <h1 className="text-2xl font-bold text-center">测评结果报告</h1>
 
-        {/* 3. 展示剩余次数的代码块 */}
+        {/* 这里原本应该有你的图表展示代码，如果被删了，请记得补回 */}
+        {results && (
+          <div className="p-4 bg-white shadow rounded-xl text-center">
+            <p className="text-slate-600">测试已完成，结果已生成</p>
+          </div>
+        )}
+
+        {/* 剩余次数展示 */}
         {remainingUses !== null && (
           <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-center mx-4">
             <p className="text-sm text-slate-500">
