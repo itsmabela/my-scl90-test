@@ -136,7 +136,27 @@ const AssessmentPage = () => {
   };
 
   const handleSubmit = async () => {
-    await submitAssessment(answers);
+    await submitAssessment(answers);// 扣减验证码次数
+    const deductAccessCount = async () => {
+      const currentCode = localStorage.getItem('access_code');
+      if (currentCode) {
+        // 1. 获取当前次数
+        const { data } = await supabase
+          .from('access_codes')
+          .select('used_count')
+          .eq('code', currentCode)
+          .single();
+    
+        if (data) {
+          // 2. 次数 + 1
+          await supabase
+            .from('access_codes')
+            .update({ used_count: data.used_count + 1 })
+            .eq('code', currentCode);
+        }
+      }
+    };
+    
   };
 
   if (!currentQuestion) return null;
