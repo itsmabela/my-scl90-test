@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-// 请确保路径与你项目实际结构一致
 import { supabase } from "../supabase"; 
-import { calculateResults } from "../data/scl90"; 
+import { calculateResults, questions, scaleOptions } from "../data/scl90"; 
 import { useToast } from "@/components/ui/use-toast";
 
 const STORAGE_KEY = 'scl90_progress';
@@ -13,33 +12,49 @@ export default function AssessmentPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // 1. 初始化：从本地恢复进度
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.answers) setAnswers(parsed.answers);
+      } catch (e) {
+        console.error("恢复进度失败", e);
+      }
+    }
+  }, []);
+
+  // 2. 选择答案逻辑
+  const handleSelect = (questionId: number, value: number) => {
+    const newAnswers = { ...answers, [questionId]: value };
+    setAnswers(newAnswers);
+    // 实时保存进度到本地，防止意外刷新
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ answers: newAnswers }));
+  };
+
+  // 3. 提交逻辑
   const submitAssessment = async () => {
-    // 1. 基础校验：确保 90 题全部完成
     const completedCount = Object.keys(answers).length;
-    if (isSubmitting || completedCount < 90) {
+    if (completedCount < 90) {
       toast({ 
-        title: "提示", 
-        description: `请完成所有题目后再提交（当前已完成: ${completedCount}/90）` 
+        title: "未完成", 
+        description: `请完成所有题目（当前: ${completedCount}/90），漏题会导致结果不准确。` 
       });
       return;
     }
 
     setIsSubmitting(true);
-
     try {
-      // 2. ⭐ 核心突破：立即锁定本地存储，不等待任何数据库操作
-      const answersData = JSON.stringify(answers);
-      window.localStorage.setItem("test-answers", answersData);
+      // 立即锁定答案到本地存储，供结果页读取
+      window.localStorage.setItem("test-answers", JSON.stringify(answers));
       window.localStorage.removeItem(STORAGE_KEY); 
-      console.log("✅ 本地存储已锁定，准备跳转");
 
-      // 3. 🚀 非阻塞操作：验证码扣费与数据库备份 (不使用 await)
-      // 这样即便 Supabase 卡住或报错，也不会影响页面跳转
+      // 后台执行异步任务（不等待，直接跳转）
       (async () => {
         try {
           const currentCode = window.localStorage.getItem('access_code');
-          
-          // 执行验证码更新
+          // 1. 更新验证码使用次数
           if (currentCode) {
             const { data: codeData } = await (supabase as any)
               .from('access_codes')
@@ -55,31 +70,30 @@ export default function AssessmentPage() {
             }
           }
 
-          // 执行数据库结果备份
-          const finalResults = (calculateResults as any)(answers);
+          // 2. 备份测试结果到数据库
+          const finalResults = calculateResults(answers);
           await (supabase as any).from("test_results").insert({
             test_type: "scl90",
             answers: answers,
             result: finalResults,
             submitted_at: new Date().toISOString(),
           });
-          console.log("后台数据同步完成");
+          console.log("后台数据备份完成");
         } catch (bgError) {
-          console.error("后台同步失败（非致命）:", bgError);
+          console.error("后台同步非致命异常:", bgError);
         }
       })();
 
-      // 4. 立即反馈并跳转
-      toast({ title: "提交成功", description: "正在为您展示测评报告..." });
+      toast({ title: "提交成功", description: "正在为您生成深度分析报告..." });
       
+      // 略微延迟确保存储写入完成
       setTimeout(() => {
         navigate("/results");
-      }, 200);
+      }, 300);
 
     } catch (error) {
-      console.error("提交逻辑异常:", error);
-      // 兜底：发生任何错误都强制跳转，因为 localStorage 可能已经存好了
-      navigate("/results");
+      console.error("提交异常:", error);
+      navigate("/results"); // 发生错误也尝试跳转
     } finally {
       setIsSubmitting(false);
     }
@@ -88,32 +102,66 @@ export default function AssessmentPage() {
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8">
-        <div className="mb-8 text-center">
+        {/* 顶部固定进度栏 */}
+        <div className="mb-8 sticky top-0 bg-white/95 backdrop-blur py-4 z-10 border-b">
           <h1 className="text-2xl font-bold text-slate-900">SCL-90 症状自评量表</h1>
-          <p className="text-slate-500 mt-2">请根据您最近一周的实际感受进行选择</p>
-          <div className="mt-4 inline-block px-4 py-1 bg-cyan-50 text-cyan-700 rounded-full text-sm font-medium">
-            已完成: {Object.keys(answers).length} / 90
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-sm text-slate-500">请根据您最近一周的实际感受进行选择</span>
+            <span className="px-3 py-1 bg-cyan-50 text-cyan-700 rounded-full text-xs font-bold">
+              已完成: {Object.keys(answers).length} / 90
+            </span>
+          </div>
+          {/* 进度条演示 */}
+          <div className="w-full h-1.5 bg-slate-100 rounded-full mt-4 overflow-hidden">
+            <div 
+              className="h-full bg-cyan-500 transition-all duration-300" 
+              style={{ width: `${(Object.keys(answers).length / 90) * 100}%` }}
+            />
           </div>
         </div>
 
-        {/* 这里需要确保你的题目列表组件正确调用了 setAnswers。
-          例如：<QuestionList onAnswer={(id, val) => setAnswers(prev => ({...prev, [id]: val}))} />
-        */}
+        {/* 题目列表 */}
+        <div className="space-y-10">
+          {questions.map((q) => (
+            <div key={q.id} className="group">
+              <p className="text-lg font-medium text-slate-800 mb-5 group-hover:text-cyan-700 transition-colors">
+                <span className="text-slate-300 mr-2 text-sm font-mono">{q.id}.</span>
+                {q.text}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {scaleOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => handleSelect(q.id, opt.value)}
+                    className={`px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
+                      answers[q.id] === opt.value
+                        ? "bg-cyan-600 border-cyan-600 text-white shadow-md shadow-cyan-100 ring-2 ring-cyan-100"
+                        : "bg-white border-slate-200 text-slate-600 hover:border-cyan-300 hover:bg-cyan-50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
 
-        <div className="mt-10 pt-6 border-t border-slate-100">
+        {/* 底部提交按钮 */}
+        <div className="mt-16 pt-8 border-t border-slate-100">
           <button 
             onClick={submitAssessment}
             disabled={isSubmitting}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
+            className={`w-full py-5 rounded-2xl font-bold text-xl transition-all ${
               isSubmitting 
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
-                : "bg-cyan-600 text-white hover:bg-cyan-700 shadow-lg shadow-cyan-200"
+                : "bg-cyan-600 text-white hover:bg-cyan-700 shadow-xl shadow-cyan-200 active:scale-[0.98]"
             }`}
           >
-            {isSubmitting ? "正在生成报告..." : "提交测评查看结果"}
+            {isSubmitting ? "报告生成中..." : "提交测评查看结果"}
           </button>
-          <p className="text-center text-slate-400 text-xs mt-4">
-            点击提交即表示您已阅读并同意个人隐私保护协议
+          <p className="text-center text-slate-400 text-xs mt-6">
+            本测评仅作为心理状态参考，不作为临床诊断依据
           </p>
         </div>
       </div>
