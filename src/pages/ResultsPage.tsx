@@ -1,72 +1,45 @@
-const ResultsPage = () => {
-  const navigate = useNavigate();
-  const [remainingUses, setRemainingUses] = useState<number | null>(null);
-  // 第 4 行 👈 修改这里
+import { useEffect, useState } from "react";
+// 路径必须与 AssessmentPage 保持对齐
+import { calculateResults } from "../data/scl90"; 
 
-// 定义计算结果的结构接口
-interface SCL90ResultFactor {
-  factor: string; // 因子名称，如“躯体化”
-  score: number;  // 因子分数，如 1.55
-}
-
-// 将 setResults 的类型明确为该接口的数组
-const [results, setResults] = useState<SCL90ResultFactor[] | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function ResultsPage() {
+  // 使用 <any> 允许状态接收计算出的结果对象
+  const [results, setResults] = useState<any>(null);
 
   useEffect(() => {
-    const processResults = async () => {
-      setLoading(true);
-      console.log("🔍 [诊断] 开始处理结果页逻辑...");
-
-      // 1. 读取本地存储的答案并计算
-      const savedAnswers = localStorage.getItem("test-answers");
-      console.log("🔍 [诊断] LocalStorage 中的 'test-answers':", savedAnswers);
-
-      if (savedAnswers) {
-        try {
-          const answers = JSON.parse(savedAnswers);
-          console.log("🔍 [诊断] 解析后的答案对象:", answers);
-
-          const calculated = calculateResults(answers);
-          console.log("🔍 [诊断] 计算出的维度分数:", calculated);
-
-          if (Array.isArray(calculated) && calculated.length > 0) {
-            setResults(calculated);
-            console.log("✅ [诊断] 结果已成功存入 State");
-          } else {
-            console.error("❌ [诊断] calculateResults 返回了空数组或无效数据");
-          }
-        } catch (e) {
-          console.error("❌ [诊断] JSON 解析或计算过程崩溃:", e);
-        }
-      } else {
-        console.warn("⚠️ [诊断] 没找到 'test-answers'，请检查 AssessmentPage 是否存对了名字");
+    const loadStoredResults = () => {
+      // 1. 获取本地存储
+      const rawData = window.localStorage.getItem("test-answers");
+      
+      if (!rawData) {
+        console.error("⚠️ [未发现数据] LocalStorage 中没有 test-answers");
+        return;
       }
 
-      // 2. 检查数据库连接 (从 Supabase 读取次数)
-      const currentCode = localStorage.getItem('access_code');
-      if (currentCode) {
-        try {
-          const { data, error } = await supabase
-            .from('access_codes')
-            .select('used_count, max_uses')
-            .eq('code', currentCode)
-            .single();
-
-          if (error) throw error;
-          if (data) {
-            console.log("✅ [诊断] 成功从 Supabase 读取次数:", data);
-            setRemainingUses(data.max_uses - data.used_count);
-          }
-        } catch (err) {
-          console.error("❌ [诊断] Supabase 读取失败，请检查 RLS 策略:", err);
+      try {
+        // 2. 解析并计算
+        const parsedAnswers = JSON.parse(rawData);
+        const computedData = (calculateResults as any)(parsedAnswers);
+        
+        if (computedData) {
+          setResults(computedData);
+          console.log("✅ [结果生成成功]");
         }
+      } catch (err) {
+        console.error("❌ [解析失败] 答案格式不正确:", err);
       }
-
-      setLoading(false);
     };
-    
-    processResults();
-  }, []); // 👈 确保这里只有一个 useEffect，且末尾是空的依赖数组
 
-  // 下面接你的 return (...) 代码
+    loadStoredResults();
+  }, []);
+
+  // ... 你的报告渲染逻辑
+  if (!results) return <div>正在生成报告，请稍候...</div>;
+
+  return (
+    <div>
+      {/* 这里渲染你的图表和结果 */}
+      <h1>测评结果报告</h1>
+    </div>
+  );
+}
